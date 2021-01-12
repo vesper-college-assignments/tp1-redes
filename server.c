@@ -33,14 +33,18 @@ void * client_thread(void *data) {
 
     char buf[BUFSZ];
     memset(buf, 0, BUFSZ);
-    size_t count = recv(cdata->csock, buf, BUFSZ - 1, 0);
-    printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
+    
+    while(1){
+        size_t count = recv(cdata->csock, buf, BUFSZ - 1, 0);
+        printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
 
-    sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
-    count = send(cdata->csock, buf, strlen(buf) + 1, 0);
-    if (count != strlen(buf) + 1) {
-        logexit("send");
+        sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
+        count = send(cdata->csock, buf, strlen(buf) + 1, 0);
+        if (count != strlen(buf) + 1) {
+            logexit("send");
+        }
     }
+
     close(cdata->csock);
 
     pthread_exit(EXIT_SUCCESS);

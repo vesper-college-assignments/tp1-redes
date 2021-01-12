@@ -27,12 +27,19 @@ int client_sockaddr_init(const char *addrstr, const char *portstr,
 
     // não sabemos se o usuario passou ipv4 ou piv6
     // vamos tentar um por vez
-    // entendi nada do que aconteceu aqui
-    // tá inicializando o storage, mas como eu nãos ei
+    // a gente recebeu ums truc genérico, vamos tentar 
+    
+    // essa struct segura endereços do tipo ipv4
+    // a função inet_pton inicializa qq struct do tipo addr de acordo com a família passada
+    // Daí estamos fingindo que é ipv4 pra ver se a função consegur inicializar a struct
     struct in_addr inaddr4; // 32-bit IP address
     if (inet_pton(AF_INET, addrstr, &inaddr4)) {
+        // se ntrou é pq a inet_pton conseguiu inicializar a struct como ipv4
+
+        // Essa struct segura um socket inteiro, ou seja, a família, o endereço e o port
+        // Vamos armazenar esas info na struct storage, que pode ser tanto ipv4 como ipv6
         struct sockaddr_in *addr4 = (struct sockaddr_in *)storage;
-        addr4->sin_family = AF_INET; //???
+        addr4->sin_family = AF_INET; //usado para ipv4
         addr4->sin_port = port;
         addr4->sin_addr = inaddr4; // pq aqui nao teve que usar memcpy?
         return 0;
@@ -41,7 +48,7 @@ int client_sockaddr_init(const char *addrstr, const char *portstr,
     struct in6_addr inaddr6; // 128-bit IPv6 address
     if (inet_pton(AF_INET6, addrstr, &inaddr6)) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)storage;
-        addr6->sin6_family = AF_INET6;
+        addr6->sin6_family = AF_INET6; //usado para ipv6
         addr6->sin6_port = port;
         memcpy(&(addr6->sin6_addr), &inaddr6, sizeof(inaddr6));
         return 0;
@@ -51,22 +58,22 @@ int client_sockaddr_init(const char *addrstr, const char *portstr,
 }
 
 
-void addrtostr(const struct sockaddr *addr, char *str, size_t strsize) {
+void addrtostr(const struct sockaddr *server_ip_address, char *str, size_t strsize) {
     int version;
     char addrstr[INET6_ADDRSTRLEN + 1] = "";
     uint16_t port;
 
-    if (addr->sa_family == AF_INET) {
+    if (server_ip_address->sa_family == AF_INET) {
         version = 4;
-        struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)server_ip_address;
         if (!inet_ntop(AF_INET, &(addr4->sin_addr), addrstr,
                        INET6_ADDRSTRLEN + 1)) {
             logexit("ntop");
         }
         port = ntohs(addr4->sin_port); // network to host short
-    } else if (addr->sa_family == AF_INET6) {
+    } else if (server_ip_address->sa_family == AF_INET6) {
         version = 6;
-        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)server_ip_address;
         if (!inet_ntop(AF_INET6, &(addr6->sin6_addr), addrstr,
                        INET6_ADDRSTRLEN + 1)) {
             logexit("ntop");
