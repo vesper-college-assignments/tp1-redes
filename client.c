@@ -29,13 +29,15 @@ void *listenkb(void *data) {
     // Aquie ele tá castando o pointer para um struct*?
     // Pq não recebeu o pointer especifico?
     struct sock *sdata = (struct sock *)data;
-    char buf[BUFSZ];
-    memset(buf, 0, BUFSZ);
+    
+	
+	char message_to_send[BUFSZ];
+    memset(message_to_send, 0, BUFSZ);
 
-    printf("> ");
-    fgets(buf, BUFSZ - 1, stdin);
-    size_t count = send(sdata->csock, buf, strlen(buf) + 1, 0);
-    if (count != strlen(buf) + 1) {
+    printf("Message> ");
+    fgets(message_to_send, BUFSZ - 1, stdin);
+    size_t count = send(sdata->csock, message_to_send, strlen(message_to_send) + 1, 0);
+    if (count != strlen(message_to_send) + 1) {
       logexit("send");
     }
   }
@@ -43,16 +45,18 @@ void *listenkb(void *data) {
   pthread_exit(EXIT_SUCCESS);
 }
 
+
+
 void *listennw(void *data) {
   struct sock *sdata = (struct sock *)data;
   while (1) {
-    char buf[BUFSZ];
-    memset(buf, 0, BUFSZ);
+    char message_received[BUFSZ];
+    memset(message_received, 0, BUFSZ);
 
-    size_t count = recv(sdata->csock, buf, BUFSZ, 0);
+    size_t total_bytes = recv(sdata->csock, message_received, BUFSZ, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("\r< %s> ", buf);
-    if (count == 0) {
+    printf("\r< %s> ", message_received);
+    if (total_bytes == 0) {
       break;
     }
   }
@@ -113,23 +117,18 @@ int main(int argc, char **argv) {
 	// pq um struct e não apenas o fd?????
 	struct sock *sdata = malloc(sizeof(*sdata));
 	sdata->csock = client_socket_descriptor;
-	// sdata tem o client_socket_descriptor
-
-
-	// Ele tá passando o mesmo socket_descriptor para ambas as threads
-	// É possível usar a mesma port para ouvir processos diferentes??
 
 	// Listen to keyboard
-	pthread_t kbtid;
-	pthread_create(&kbtid, NULL, listenkb, sdata);
+	pthread_t std_in;
+	pthread_create(&std_in, NULL, listenkb, sdata);
 
 	// Listen to network
-	pthread_t nwtid;
-	pthread_create(&nwtid, NULL, listennw, sdata);
+	pthread_t network;
+	pthread_create(&network, NULL, listennw, sdata);
 
 	while (1) {
 		if (sdata->csock == -1) {
-		printf("\r[Connection] Disconnected by %s\n", addrstr);
+			printf("\r[Connection] Disconnected by %s\n", addrstr);
 		break;
 		}
 	}

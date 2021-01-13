@@ -18,34 +18,48 @@ void usage(int argc, char **argv) {
 }
 
 struct client_data {
-    int csock;
+    int socket_descriptor;
     struct sockaddr_storage storage;
 };
 
-// funcao que roda nas threads paralelas
+
 void * client_thread(void *data) {
-    struct client_data *cdata = (struct client_data *)data;
-    struct sockaddr *caddr = (struct sockaddr *)(&cdata->storage);
+    struct client_data *client = (struct client_data *)data;
+    struct sockaddr *caddr = (struct sockaddr *)(&client->storage);
 
     char caddrstr[BUFSZ];
     addrtostr(caddr, caddrstr, BUFSZ);
     printf("[log] connection from %s\n", caddrstr);
 
-    char buf[BUFSZ];
-    memset(buf, 0, BUFSZ);
-    
-    while(1){
-        size_t count = recv(cdata->csock, buf, BUFSZ - 1, 0);
-        printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
+    char message_received[BUFSZ];
+    memset(message_received, 0, BUFSZ);
+    int loops = 0;
 
-        sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
-        count = send(cdata->csock, buf, strlen(buf) + 1, 0);
-        if (count != strlen(buf) + 1) {
+    while(1){
+        
+        // ===== Receives message =========
+        size_t count = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
+        printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, message_received);
+        
+        // ==== Response =======
+        char response[BUFSZ];
+        memset(response, 0, BUFSZ);
+        sprintf(response, "remote TESTE endpoint: %.100s\n", caddrstr);
+        count = send(client->socket_descriptor, response, strlen(response) + 1, 0);
+        if (count != strlen(response) + 1) {
             logexit("send");
         }
+
+        // tratar msg recebida de kill
+        int ret = strcmp(message_received, "##kill\n");
+        if(ret == 0){
+            exit(EXIT_SUCCESS);
+            // TODO tem que dar free nas coisas?
+        }
+        memset(message_received, 0, BUFSZ);
     }
 
-    close(cdata->csock);
+    close(client->socket_descriptor);
 
     pthread_exit(EXIT_SUCCESS);
 }
@@ -90,21 +104,26 @@ int main(int argc, char **argv) {
         socklen_t caddrlen = sizeof(cstorage);
 
         int csock = accept(s, caddr, &caddrlen);
+        // printf("nova conexão aceit no socket descriptor %d\n", csock);
+        // csock pode ser o meu ID do cliente
+
+
+        // Se a conexão falhar, seria o caso de derrubar o server?
         if (csock == -1) {
             logexit("conexion not accepted");
         }
 
-        struct client_data *cdata = malloc(sizeof(*cdata));
-        if (!cdata) {
+        struct client_data *new_client = malloc(sizeof(*new_client));
+        if (!new_client) {
             logexit("malloc error for client data");
         }
         
-        cdata->csock = csock;
-        memcpy(&(cdata->storage), &cstorage, sizeof(cstorage));
+        new_client->socket_descriptor = csock;
+        memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
 
         pthread_t tid;
-        pthread_create(&tid, NULL, client_thread, cdata);
+        pthread_create(&tid, NULL, client_thread, new_client);
     }
-
+       
     exit(EXIT_SUCCESS);
 }
