@@ -6,77 +6,105 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
-
+#include <ostream>
+#include <iostream>
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#define BUFSZ 1024
+#define BUFSZ 501
 
-void usage(int argc, char **argv) {
-    printf("usage: %s <v4|v6> <server port>\n", argv[0]);
-    printf("example: %s v4 51511\n", argv[0]);
+void usage(char **port) {
+    std::cout << "usage: "<<  port[0]  << " <v4|v6> <server port>" << std::endl;
+    std::cout << "example: " << port[0] << " v4 51511" << std::endl;
     exit(EXIT_FAILURE);
 }
 
-struct client_data {
+class ClientData {
+public:
     int socket_descriptor;
     struct sockaddr_storage storage;
 };
 
-int validate_input(char * message_received){
-    
+
+int validate_input(char * message_received, size_t bytes_received){
+
     // If kill message
     int ret = strcmp(message_received, "##kill\n");
     if(ret == 0){
+        std::cout << "Recebeu mensagem de kill" << std::endl;
         exit(EXIT_SUCCESS);
         // TODO tem que dar free nas coisas?
     }
 
     // if greater than 500 bytes
-
-
-    // is ascii
-    for (int i = 0; i < strlen(message_received); i++){
-        if (!isascii(message_received[i]))
-            return -1;
+    if(bytes_received > 500){
+        std::cout << "Msg maior que 500" << std::endl;
+        return -1;
     }
 
+    // is ascii
+    // TODO passar pra cpp
+//    for (int i = 0; i < strlen(message_received); i++){
+//        if (!isascii(message_received[i])){
+//        std::cout << "algo nao eh ascii" << std::endl;
+//            return -1;
+//        }
+//    }
     return 0;
+}
 
+int is_finished(char * message_received){
+    int len = strlen(message_received);
+    if (message_received[len-1] == '\n'){
+        return 1;
+    }
+    return 0;
 }
 
 void * client_thread(void *data) {
-    struct client_data *client = (struct client_data *)data;
+    ClientData *client = (ClientData *)data;
     struct sockaddr *caddr = (struct sockaddr *)(&client->storage);
 
     char caddrstr[BUFSZ];
     addrtostr(caddr, caddrstr, BUFSZ);
-    printf("[log] connection from %s\n", caddrstr);
+
+    std::cout << "[log] connection from " << caddrstr << std::endl;
 
     char message_received[BUFSZ];
     memset(message_received, 0, BUFSZ);
 
     while(1){
-        
+
         // ===== Receives message =========
-        size_t count = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
-        printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, message_received);
-        
+        size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
+
+        std::cout << "[msg] "<< caddrstr << ", " << (int)bytes_exchanged << " bytes: " << message_received << std::endl;
+
+        if(0 != validate_input(message_received, bytes_exchanged)){
+
+            std::cout << "Bad input. Dumping client" << std::endl;
+
+            close(client->socket_descriptor);
+            pthread_exit(NULL);
+        }
+
+        if(is_finished(message_received)){
+            std::cout << "Mensagem contem \\n" <<  std::endl;
+        }
+
+        std::cout << "tamanho da msg recebida: " << (int)strlen(message_received) << std::endl;
+
+
+        memset(message_received, 0, BUFSZ);
+
         // ==== Response =======
         char response[BUFSZ];
         memset(response, 0, BUFSZ);
         sprintf(response, "remote endpoint: %.100s\n", caddrstr);
-        count = send(client->socket_descriptor, response, strlen(response) + 1, 0);
-        if (count != strlen(response) + 1) {
+        bytes_exchanged = send(client->socket_descriptor, response, strlen(response) + 1, 0);
+        if (bytes_exchanged != strlen(response) + 1) {
             logexit("send");
         }
-
-        if(0 != validate_input(message_received)){
-            printf("Bad input. Dumping client\n");
-            close(client->socket_descriptor);
-            pthread_exit(NULL);
-        }
-        memset(message_received, 0, BUFSZ);
     }
 
     close(client->socket_descriptor);
@@ -86,12 +114,12 @@ void * client_thread(void *data) {
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        usage(argc, argv);
+        usage(argv);
     }
 
     struct sockaddr_storage storage;
     if (0 != server_sockaddr_init(argv[1], argv[2], &storage)) {
-        usage(argc, argv);
+        usage(argv);
     }
 
     int s;
@@ -116,7 +144,8 @@ int main(int argc, char **argv) {
 
     char addrstr[BUFSZ];
     addrtostr(addr, addrstr, BUFSZ);
-    printf("bound to %s, waiting connections\n", addrstr);
+
+    std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
 
     while (1) {
         struct sockaddr_storage cstorage;
@@ -124,8 +153,9 @@ int main(int argc, char **argv) {
         socklen_t caddrlen = sizeof(cstorage);
 
         int csock = accept(s, caddr, &caddrlen);
-        // printf("nova conexão aceit no socket descriptor %d\n", csock);
-        // csock pode ser o meu ID do cliente
+        // std::cout << "connected to %s" << addrstr << std::endl;
+        // printf("nova conexão aceita no socket descriptor %d\n", socket_descriptor);
+        // socket_descriptor pode ser o meu ID do cliente
 
 
         // Se a conexão falhar, seria o caso de derrubar o server?
@@ -133,11 +163,11 @@ int main(int argc, char **argv) {
             logexit("conexion not accepted");
         }
 
-        struct client_data *new_client = malloc(sizeof(*new_client));
+        ClientData * new_client = new ClientData;
         if (!new_client) {
             logexit("malloc error for client data");
         }
-        
+
         new_client->socket_descriptor = csock;
         memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
 
