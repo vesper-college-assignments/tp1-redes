@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -22,6 +23,27 @@ struct client_data {
     struct sockaddr_storage storage;
 };
 
+int validate_input(char * message_received){
+    
+    // If kill message
+    int ret = strcmp(message_received, "##kill\n");
+    if(ret == 0){
+        exit(EXIT_SUCCESS);
+        // TODO tem que dar free nas coisas?
+    }
+
+    // if greater than 500 bytes
+
+
+    // is ascii
+    for (int i = 0; i < strlen(message_received); i++){
+        if (!isascii(message_received[i]))
+            return -1;
+    }
+
+    return 0;
+
+}
 
 void * client_thread(void *data) {
     struct client_data *client = (struct client_data *)data;
@@ -33,7 +55,6 @@ void * client_thread(void *data) {
 
     char message_received[BUFSZ];
     memset(message_received, 0, BUFSZ);
-    int loops = 0;
 
     while(1){
         
@@ -44,17 +65,16 @@ void * client_thread(void *data) {
         // ==== Response =======
         char response[BUFSZ];
         memset(response, 0, BUFSZ);
-        sprintf(response, "remote TESTE endpoint: %.100s\n", caddrstr);
+        sprintf(response, "remote endpoint: %.100s\n", caddrstr);
         count = send(client->socket_descriptor, response, strlen(response) + 1, 0);
         if (count != strlen(response) + 1) {
             logexit("send");
         }
 
-        // tratar msg recebida de kill
-        int ret = strcmp(message_received, "##kill\n");
-        if(ret == 0){
-            exit(EXIT_SUCCESS);
-            // TODO tem que dar free nas coisas?
+        if(0 != validate_input(message_received)){
+            printf("Bad input. Dumping client\n");
+            close(client->socket_descriptor);
+            pthread_exit(NULL);
         }
         memset(message_received, 0, BUFSZ);
     }
