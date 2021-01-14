@@ -26,22 +26,34 @@ public:
     struct sockaddr_storage storage;
 };
 
+void receive_message(const ClientData *client, std::string &string_message) {
+    char message_part[BUFSZ];
+    size_t bytes_exchanged;
+    char last_char;
+    std::cout << "Receiving message" << std::endl;
+    do{
+        bytes_exchanged = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
+        if(bytes_exchanged > 500){
+            std::cout << "Msg maior que 500" << std::endl;
+            close(client->socket_descriptor);
+        }
 
-int validate_input(char * message_received, size_t bytes_received){
+        last_char = message_part[strlen(message_part) - 1];
+        std::cout << (int)last_char << std::endl;
+        string_message.append(message_part);
+        memset(message_part, 0, BUFSZ);
+    }while(last_char != '\n');
+
+    std::cout << "Message complete" << std::endl;
+}
+
+int validate_input(std::string message_received){
 
     // If kill message
-    int ret = strcmp(message_received, "##kill\n");
-    if(ret == 0){
-        std::cout << "Recebeu mensagem de kill" << std::endl;
-        exit(EXIT_SUCCESS);
-        // TODO tem que dar free nas coisas?
-    }
+
 
     // if greater than 500 bytes
-    if(bytes_received > 500){
-        std::cout << "Msg maior que 500" << std::endl;
-        return -1;
-    }
+
 
     // is ascii
     // TODO passar pra cpp
@@ -54,72 +66,68 @@ int validate_input(char * message_received, size_t bytes_received){
     return 0;
 }
 
-int is_finished(char * message_received){
-    int len = strlen(message_received);
-    if (message_received[len-1] == '\n'){
-        return 1;
-    }
-    return 0;
-}
-
 void * client_thread(void *data) {
     auto *client = (ClientData *)data;
     auto *caddr = (struct sockaddr *)(&client->storage);
 
     char caddrstr[BUFSZ];
     addrtostr(caddr, caddrstr, BUFSZ);
-    std::cout << "[log] connection from " << caddrstr << std::endl;
-    char message_received[BUFSZ];
+    std::cout << "[log] incoming connection accepted"<< std::endl;
 
     while(true){
+        std::string message_from_client;
 
         // ===== Receives message =========
-//        size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
+        receive_message(client, message_from_client);
+        std::cout << "Mensagem recebida: "<< message_from_client;
 
-        // TESTE DE RECEBER VARIAS =========================================================
-        std::vector<char> buffer(BUFSZ);
-        std::string rcv;
-        size_t bytesReceived = 0;
-        do {
-            bytesReceived = recv(client->socket_descriptor, &buffer[0], buffer.size(), 0);
-            // append string from buffer.
-            if(0 != bytesReceived) {
-                // error
-            } else {
-                rcv.append( buffer.cbegin(), buffer.cend() );
-            }
-        } while ( bytesReceived == BUFSZ );
-        // ====================================================================
+        if(message_from_client == "##kill\n"){
+            std::cout << "Recebeu mensagem de kill" << std::endl;
+            exit(EXIT_SUCCESS);
+        }
 
-        std::cout << "[msg] "<< caddrstr << ", " << (int)bytesReceived << " bytes: " << message_received << std::endl;
 
-        if(0 != validate_input(message_received, bytesReceived)){
-
+        if(0 != validate_input(message_from_client)){
             std::cout << "Bad input. Dumping client" << std::endl;
-
             close(client->socket_descriptor);
             pthread_exit(nullptr);
         }
 
-        if(is_finished(message_received)){
-            std::cout << "Mensagem contem \\n" <<  std::endl;
-        }
-
-        std::cout << "tamanho da msg recebida: " << (int)strlen(message_received) << std::endl;
-
-
-        memset(message_received, 0, BUFSZ);
-
         // ==== Response =======
         char response[BUFSZ];
         memset(response, 0, BUFSZ);
-        sprintf(response, "remote endpoint: %.100s\n", caddrstr);
-        bytesReceived = send(client->socket_descriptor, response, strlen(response) + 1, 0);
-        if (bytesReceived != strlen(response) + 1) {
+        sprintf(response, "> resposta do servidor");
+
+        size_t bytes_exchanged = send(client->socket_descriptor, response, strlen(response) + 1, 0);
+        if (bytes_exchanged != strlen(response) + 1) {
             logexit("send");
         }
     }
 }
+
+
+
+//size_t receive_message(const ClientData *client, char * message_received, std::string &total_message) {
+//
+//    // Original method
+//    size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
+//
+//
+//    // Repetitive
+////    std::vector<char> msg_part(BUFSZ);
+////    size_t bytes_exchanged = 0;
+////    do {
+////        bytes_exchanged = recv(client->socket_descriptor, &msg_part[0], msg_part.size(), 0);
+////        if(0 != bytes_exchanged) {
+////            close(client->socket_descriptor);
+////        } else {
+////            total_message.append(msg_part.cbegin(), msg_part.cend());
+////        }
+////    } while (msg_part.back() != '\n');
+//
+//
+//    return bytes_exchanged;
+//}
 
 #pragma clang diagnostic push
 int main(int argc, char **argv) {
@@ -127,13 +135,14 @@ int main(int argc, char **argv) {
         usage(argv);
     }
 
-    struct sockaddr_storage storage;
-    if (0 != server_sockaddr_init(argv[1], argv[2], &storage)) {
+    struct sockaddr_storage server_data;
+    if (0 != server_sockaddr_init(argv[1], argv[2], &server_data)) {
         usage(argv);
     }
 
     int s;
-    s = socket(storage.ss_family, SOCK_STREAM, 0);
+
+    s = socket(server_data.ss_family, SOCK_STREAM, 0);
     if (s == -1) {
         logexit("socket");
     }
@@ -143,8 +152,8 @@ int main(int argc, char **argv) {
         logexit("setsockopt");
     }
 
-    auto *addr = (struct sockaddr *)(&storage);
-    if (0 != bind(s, addr, sizeof(storage))) {
+    auto *addr = (struct sockaddr *)(&server_data);
+    if (0 != bind(s, addr, sizeof(server_data))) {
         logexit("binding error");
     }
 
@@ -162,11 +171,11 @@ int main(int argc, char **argv) {
         struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
         socklen_t caddrlen = sizeof(cstorage);
 
-        int csock = accept(s, caddr, &caddrlen);
+        int socket_descriptor = accept(s, caddr, &caddrlen);
          std::cout << "nova conexão aceita no socket descriptor " << socket_descriptor << std::endl;
 
         auto * new_client = new ClientData;
-        new_client->socket_descriptor = csock;
+        new_client->socket_descriptor = socket_descriptor;
         memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
 
         pthread_t tid;

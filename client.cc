@@ -43,16 +43,16 @@ void usage(char **port) {
 }
 
 void *network_thread(void *data) {
-    SocketWrapper *sdata = (SocketWrapper *) data;
+    auto *sdata = (SocketWrapper *) data;
 
-    while (1) {
+    while (true) {
         char message_received[BUFSZ];
         memset(message_received, 0, BUFSZ);
 
         size_t total_bytes = recv(sdata->socket_descriptor, message_received, BUFSZ, 0);
         setvbuf(stdout, NULL, _IONBF, 0);
-
-        std::cout << "\r< %s> " << message_received << std::endl;
+        std::cout << std::endl;
+        std::cout << message_received << std::endl;
 
         if (total_bytes == 0) {
             break;
@@ -63,7 +63,6 @@ void *network_thread(void *data) {
     sdata->socket_descriptor = -1;
     pthread_exit(EXIT_SUCCESS);
 }
-
 
 
 int main(int argc, char **argv) {
@@ -86,7 +85,7 @@ int main(int argc, char **argv) {
 	}
 
 	/*Tentando conexão*/
-    struct sockaddr *server_ip_address = (struct sockaddr *)(&server_socket); /* Structure describing a generic socket address.  */
+    auto *server_ip_address = (struct sockaddr *)(&server_socket); /* Structure describing a generic socket address.  */
 	if (0 != connect(client_socket_descriptor, server_ip_address, sizeof(server_socket))) {
 		logexit("connect failed");
 	}
@@ -97,29 +96,27 @@ int main(int argc, char **argv) {
 
     std::cout << "connected to " << addrstr << std::endl;
 
-	SocketWrapper * sdata = new SocketWrapper;
+	auto * sdata = new SocketWrapper;
 	sdata->socket_descriptor = client_socket_descriptor;
 
 	// Listen to keyboard
 	pthread_t std_in;
     int err_client = pthread_create(&std_in, NULL, stdin_thread, sdata);
     if (err_client) { std::cout << "Thread creation failed : " << strerror(err_client); }
-    else { std::cout << "Thread Created with ID : " << std_in << std::endl; }
+    else { std::cout << "Stdin thread Created with ID : " << std_in << std::endl; }
 
 	// Listen to network
 	pthread_t network;
     int err_ntw = pthread_create(&network, NULL, network_thread, sdata);
     if (err_ntw) { std::cout << "Thread creation failed : " << strerror(err_ntw); }
-    else { std::cout << "Thread Created with ID : " << std_in << std::endl; }
+    else { std::cout << "Network thread Created with ID : " << std_in << std::endl; }
 
-	while (1) {
+	while (true) {
 		if (sdata->socket_descriptor == -1) {
 			std::cout << "\r[Connection] Disconnected by "<< addrstr << std::endl;
 		    break;
 		}
 	}
-
-
 
 	exit(EXIT_SUCCESS);
 }
