@@ -12,6 +12,8 @@
 #include <cstring>
 #include <vector>
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "EndlessLoop"
 #define BUFSZ 501
 
 void usage(char **port) {
@@ -26,6 +28,8 @@ public:
     struct sockaddr_storage storage;
 };
 
+int setup_server(char **argv);
+
 void receive_message(const ClientData *client, std::string &string_message) {
     char message_part[BUFSZ];
     size_t bytes_exchanged;
@@ -33,6 +37,7 @@ void receive_message(const ClientData *client, std::string &string_message) {
     std::cout << "Receiving message" << std::endl;
     do{
         bytes_exchanged = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
+        std::cout << "Bytes recebidos: " << bytes_exchanged << std::endl;
         if(bytes_exchanged > 500){
             std::cout << "Msg maior que 500" << std::endl;
             close(client->socket_descriptor);
@@ -45,25 +50,6 @@ void receive_message(const ClientData *client, std::string &string_message) {
     }while(last_char != '\n');
 
     std::cout << "Message complete" << std::endl;
-}
-
-int validate_input(std::string message_received){
-
-    // If kill message
-
-
-    // if greater than 500 bytes
-
-
-    // is ascii
-    // TODO passar pra cpp
-//    for (int i = 0; i < strlen(message_received); i++){
-//        if (!isascii(message_received[i])){
-//        std::cout << "algo nao eh ascii" << std::endl;
-//            return -1;
-//        }
-//    }
-    return 0;
 }
 
 void * client_thread(void *data) {
@@ -81,16 +67,17 @@ void * client_thread(void *data) {
         receive_message(client, message_from_client);
         std::cout << "Mensagem recebida: "<< message_from_client;
 
-        if(message_from_client == "##kill\n"){
-            std::cout << "Recebeu mensagem de kill" << std::endl;
-            exit(EXIT_SUCCESS);
+        for (const char& i : message_from_client){
+            if (!isascii(message_from_client[i])){
+                std::cout << "algo nao eh ascii" << std::endl;
+                close(client->socket_descriptor);
+                pthread_exit(nullptr);
+            }
         }
 
-
-        if(0 != validate_input(message_from_client)){
-            std::cout << "Bad input. Dumping client" << std::endl;
-            close(client->socket_descriptor);
-            pthread_exit(nullptr);
+         if(message_from_client == "##kill\n"){
+            std::cout << "Recebeu mensagem de kill" << std::endl;
+            exit(EXIT_SUCCESS);
         }
 
         // ==== Response =======
@@ -106,35 +93,36 @@ void * client_thread(void *data) {
 }
 
 
-
-//size_t receive_message(const ClientData *client, char * message_received, std::string &total_message) {
-//
-//    // Original method
-//    size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
-//
-//
-//    // Repetitive
-////    std::vector<char> msg_part(BUFSZ);
-////    size_t bytes_exchanged = 0;
-////    do {
-////        bytes_exchanged = recv(client->socket_descriptor, &msg_part[0], msg_part.size(), 0);
-////        if(0 != bytes_exchanged) {
-////            close(client->socket_descriptor);
-////        } else {
-////            total_message.append(msg_part.cbegin(), msg_part.cend());
-////        }
-////    } while (msg_part.back() != '\n');
-//
-//
-//    return bytes_exchanged;
-//}
-
 #pragma clang diagnostic push
 int main(int argc, char **argv) {
     if (argc < 3) {
         usage(argv);
     }
 
+    int server_socket = setup_server(argv);
+
+    while (true) {
+        struct sockaddr_storage cstorage;
+        auto *caddr = (struct sockaddr *)(&cstorage);
+        socklen_t caddrlen = sizeof(cstorage);
+
+        int client_socket = accept(server_socket, caddr, &caddrlen);
+         std::cout << "nova conexão aceita no socket descriptor " << client_socket << std::endl;
+
+        auto * new_client = new ClientData;
+        new_client->socket_descriptor = client_socket;
+        memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
+
+        pthread_t tid;
+        pthread_create(&tid, nullptr, client_thread, new_client);
+
+
+    } // while
+       
+    exit(EXIT_SUCCESS);
+}
+
+int setup_server(char **argv) {
     struct sockaddr_storage server_data;
     if (0 != server_sockaddr_init(argv[1], argv[2], &server_data)) {
         usage(argv);
@@ -165,25 +153,8 @@ int main(int argc, char **argv) {
     addrtostr(addr, addrstr, BUFSZ);
 
     std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
-
-    while (true) {
-        struct sockaddr_storage cstorage;
-        struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
-        socklen_t caddrlen = sizeof(cstorage);
-
-        int socket_descriptor = accept(s, caddr, &caddrlen);
-         std::cout << "nova conexão aceita no socket descriptor " << socket_descriptor << std::endl;
-
-        auto * new_client = new ClientData;
-        new_client->socket_descriptor = socket_descriptor;
-        memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
-
-        pthread_t tid;
-        pthread_create(&tid, nullptr, client_thread, new_client);
-
-
-    }
-       
-    exit(EXIT_SUCCESS);
+    return s;
 }
+
+#pragma clang diagnostic pop
 #pragma clang diagnostic pop

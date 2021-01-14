@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
 
 	while (true) {
 		if (sdata->socket_descriptor == -1) {
-			std::cout << "\r[Connection] Disconnected by "<< addrstr << std::endl;
+			std::cout << "\r[Connection] Disconnected by server"<< std::endl;
 		    break;
 		}
 	}
