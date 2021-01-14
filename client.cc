@@ -25,9 +25,9 @@ void usage(char **port) {
 }
 
 
-void *stdin_thread(void *data) {
-    while (1) {
-        SocketWrapper *sdata = (SocketWrapper *) data;
+[[noreturn]] void *stdin_thread(void *data) {
+    while (true) {
+        auto *sdata = (SocketWrapper *) data;
 
         char message_to_send[BUFSZ];
         memset(message_to_send, 0, BUFSZ);

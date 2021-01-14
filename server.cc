@@ -1,15 +1,16 @@
 #include "common.h"
 
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
-#include <ctype.h>
+#include <cctype>
 #include <ostream>
 #include <iostream>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <cstring>
+#include <vector>
 
 #define BUFSZ 501
 
@@ -62,30 +63,42 @@ int is_finished(char * message_received){
 }
 
 void * client_thread(void *data) {
-    ClientData *client = (ClientData *)data;
-    struct sockaddr *caddr = (struct sockaddr *)(&client->storage);
+    auto *client = (ClientData *)data;
+    auto *caddr = (struct sockaddr *)(&client->storage);
 
     char caddrstr[BUFSZ];
     addrtostr(caddr, caddrstr, BUFSZ);
-
     std::cout << "[log] connection from " << caddrstr << std::endl;
-
     char message_received[BUFSZ];
-    memset(message_received, 0, BUFSZ);
 
-    while(1){
+    while(true){
 
         // ===== Receives message =========
-        size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
+//        size_t bytes_exchanged = recv(client->socket_descriptor, message_received, BUFSZ - 1, 0);
 
-        std::cout << "[msg] "<< caddrstr << ", " << (int)bytes_exchanged << " bytes: " << message_received << std::endl;
+        // TESTE DE RECEBER VARIAS =========================================================
+        std::vector<char> buffer(BUFSZ);
+        std::string rcv;
+        size_t bytesReceived = 0;
+        do {
+            bytesReceived = recv(client->socket_descriptor, &buffer[0], buffer.size(), 0);
+            // append string from buffer.
+            if(0 != bytesReceived) {
+                // error
+            } else {
+                rcv.append( buffer.cbegin(), buffer.cend() );
+            }
+        } while ( bytesReceived == BUFSZ );
+        // ====================================================================
 
-        if(0 != validate_input(message_received, bytes_exchanged)){
+        std::cout << "[msg] "<< caddrstr << ", " << (int)bytesReceived << " bytes: " << message_received << std::endl;
+
+        if(0 != validate_input(message_received, bytesReceived)){
 
             std::cout << "Bad input. Dumping client" << std::endl;
 
             close(client->socket_descriptor);
-            pthread_exit(NULL);
+            pthread_exit(nullptr);
         }
 
         if(is_finished(message_received)){
@@ -101,17 +114,14 @@ void * client_thread(void *data) {
         char response[BUFSZ];
         memset(response, 0, BUFSZ);
         sprintf(response, "remote endpoint: %.100s\n", caddrstr);
-        bytes_exchanged = send(client->socket_descriptor, response, strlen(response) + 1, 0);
-        if (bytes_exchanged != strlen(response) + 1) {
+        bytesReceived = send(client->socket_descriptor, response, strlen(response) + 1, 0);
+        if (bytesReceived != strlen(response) + 1) {
             logexit("send");
         }
     }
-
-    close(client->socket_descriptor);
-
-    pthread_exit(EXIT_SUCCESS);
 }
 
+#pragma clang diagnostic push
 int main(int argc, char **argv) {
     if (argc < 3) {
         usage(argv);
@@ -133,7 +143,7 @@ int main(int argc, char **argv) {
         logexit("setsockopt");
     }
 
-    struct sockaddr *addr = (struct sockaddr *)(&storage);
+    auto *addr = (struct sockaddr *)(&storage);
     if (0 != bind(s, addr, sizeof(storage))) {
         logexit("binding error");
     }
@@ -147,33 +157,24 @@ int main(int argc, char **argv) {
 
     std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
 
-    while (1) {
+    while (true) {
         struct sockaddr_storage cstorage;
         struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
         socklen_t caddrlen = sizeof(cstorage);
 
         int csock = accept(s, caddr, &caddrlen);
-        // std::cout << "connected to %s" << addrstr << std::endl;
-        // printf("nova conexão aceita no socket descriptor %d\n", socket_descriptor);
-        // socket_descriptor pode ser o meu ID do cliente
+         std::cout << "nova conexão aceita no socket descriptor " << socket_descriptor << std::endl;
 
-
-        // Se a conexão falhar, seria o caso de derrubar o server?
-        if (csock == -1) {
-            logexit("conexion not accepted");
-        }
-
-        ClientData * new_client = new ClientData;
-        if (!new_client) {
-            logexit("malloc error for client data");
-        }
-
+        auto * new_client = new ClientData;
         new_client->socket_descriptor = csock;
         memcpy(&(new_client->storage), &cstorage, sizeof(cstorage));
 
         pthread_t tid;
-        pthread_create(&tid, NULL, client_thread, new_client);
+        pthread_create(&tid, nullptr, client_thread, new_client);
+
+
     }
        
     exit(EXIT_SUCCESS);
 }
+#pragma clang diagnostic pop
