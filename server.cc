@@ -29,17 +29,24 @@ public:
     struct sockaddr_storage storage;
 };
 
-void answer_client(int socket_descriptor, const char *answer) {
+void answer_client(int socket_descriptor, const std::string message) {
     std::cout << "Enviado mensagem ao cliente " << socket_descriptor << std::endl;
-    size_t bytes_exchanged = send(socket_descriptor, answer, strlen(answer) + 1, 0);
-    if (bytes_exchanged != strlen(answer) + 1) {
+
+    // convert string to char*
+    const char *c_str_message;
+    c_str_message = message.c_str();
+    char c_message[BUFSZ];
+    strcpy(c_message, c_str_message);
+
+    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message) + 1, 0);
+    if (bytes_exchanged != strlen(c_message) + 1) {
         logexit("send");
     }
 }
 
-void subscribe(int subscriber, const std::string& tag) {
+void subscribe(int subscriber, const std::string& message_from_client) {
     pthread_mutex_lock(&mutex);
-    std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
+    std::string tag = message_from_client.substr(1);
 
     // If client not subscribed to tag
     if (tags_to_subscribers[tag].find(subscriber) == tags_to_subscribers[tag].end()) {
@@ -50,12 +57,15 @@ void subscribe(int subscriber, const std::string& tag) {
         // add tag to this subscriber
         if(subscribers_tags.find(subscriber) == subscribers_tags.end())
             subscribers_tags.insert({{subscriber, std::set<std::string>{tag}}});
-        else
+        else {
             subscribers_tags[subscriber].insert(tag);
+        }
+        std::string response = "subscribed " + message_from_client;
+        answer_client(subscriber, response);
+    } else {
 
-        answer_client(subscriber, "subscribed");
-    } else
         answer_client(subscriber, "already subscribed");
+    }
 
     std::cout << "subs to tag "<< tag << ": ";
     for(auto sub : tags_to_subscribers[tag]){
@@ -67,9 +77,9 @@ void subscribe(int subscriber, const std::string& tag) {
 
 }
 
-void unsubscribe(int subscriber, const std::string& tag){
+void unsubscribe(int subscriber, const std::string& message_from_client){
     pthread_mutex_lock(&mutex);
-
+    std::string tag = message_from_client.substr(1);
     std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
 
     // If client subscribes to tag, remove client from tag
@@ -81,7 +91,8 @@ void unsubscribe(int subscriber, const std::string& tag){
         // remove tag from subscriber
         subscribers_tags[subscriber].erase(tag);
 
-        answer_client(subscriber, "unsubscribed");
+        std::string response = "unsubscribed " + message_from_client;
+        answer_client(subscriber, response);
     } else{
         answer_client(subscriber, "not subscribed");
     }
@@ -172,8 +183,9 @@ std::string receive_message(const ClientData *client) {
         memset(message_part, 0, BUFSZ);
     }while(last_char != '\n');
 
-    std::cout << "Message complete" << std::endl;
-    return message_from_client;
+    std::string message = message_from_client.substr(0,message_from_client.length()-1);
+    std::cout << "Message complete: " << message << std::endl;
+    return message;
 }
 
 std::set<std::string> get_tags(const std::string& message){
@@ -250,10 +262,10 @@ void * client_thread(void *data) {
                 pthread_exit(nullptr);
             }
         }
-        std::cout << "Mensagem recebida: "<< message_from_client;
+        std::cout << "Mensagem recebida: "<< message_from_client << std::endl;
 
         // Check for kill
-        if(message_from_client == "##kill\n"){
+        if(message_from_client == "##kill"){
             exit(EXIT_SUCCESS);
         }
 
@@ -261,13 +273,11 @@ void * client_thread(void *data) {
         char first_char = message_from_client[0];
         switch (first_char) {
             case '+': {
-                std::string tag = message_from_client.substr(1, message_from_client.length()-2);
-                subscribe(client->socket_descriptor, tag);
+                subscribe(client->socket_descriptor, message_from_client);
                 break;
             }
             case '-': {
-                std::string tag = message_from_client.substr(1,message_from_client.length()-2);
-                unsubscribe(client->socket_descriptor, tag);
+                unsubscribe(client->socket_descriptor, message_from_client);
                 break;
             }
             default: {
@@ -278,7 +288,6 @@ void * client_thread(void *data) {
                     if(!subscribers.empty())
                         distribute_messages(subscribers, message_from_client);
                 }
-
             }
         }// switch
     } // while

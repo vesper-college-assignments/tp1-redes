@@ -50,7 +50,6 @@ void *network_thread(void *data) {
 
         size_t total_bytes = recv(sdata->socket_descriptor, message_received, BUFSZ, 0);
         setvbuf(stdout, NULL, _IONBF, 0);
-        std::cout << std::endl;
         std::cout << message_received << std::endl;
 
         if (total_bytes == 0) {
