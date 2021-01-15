@@ -32,7 +32,6 @@ void usage(char **port) {
         char message_to_send[BUFSZ];
         memset(message_to_send, 0, BUFSZ);
 
-//        std::cout << "Message >> ";
         fgets(message_to_send, BUFSZ - 1, stdin);
 
         size_t count = send(sdata->socket_descriptor, message_to_send, strlen(message_to_send) + 1, 0);

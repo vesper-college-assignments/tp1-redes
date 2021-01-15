@@ -4,4 +4,4 @@ all:
 	g++ -Wall server.cc common.o -lpthread -o server
 
 clean:
-	rm common.o client server server
+	rm common.o client server

@@ -23,6 +23,7 @@ global set subscribers_sockets
 
 static pthread_mutex_t  mutex = PTHREAD_MUTEX_INITIALIZER;
 std::unordered_map<std::string, std::set<int>> tags_to_subscribers;
+std::unordered_map<int, std::vector<std::string>> subscribers_tags;
 
 class ClientData {
 public:
@@ -31,22 +32,33 @@ public:
 };
 
 void answer_client(int socket_descriptor, const char *answer) {
+    std::cout << "Enviado mensagem ao cliente " << socket_descriptor << std::endl;
     size_t bytes_exchanged = send(socket_descriptor, answer, strlen(answer) + 1, 0);
     if (bytes_exchanged != strlen(answer) + 1) {
         logexit("send");
     }
 }
 
-void subscribe(int socket_descriptor, const std::string& tag) {
+void subscribe(int subscriber, const std::string& tag) {
     pthread_mutex_lock(&mutex);
     std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
+
     // If client not subscribed to tag
-    if (tags_to_subscribers[tag].find(socket_descriptor) == tags_to_subscribers[tag].end()) {
-        answer_client(socket_descriptor, "subscribed");
-        tags_to_subscribers[tag].insert(socket_descriptor);
-    } else {
-        answer_client(socket_descriptor, "already subscribed");
-    }
+    if (tags_to_subscribers[tag].find(subscriber) == tags_to_subscribers[tag].end()) {
+
+        // add subscriber to tag
+        tags_to_subscribers[tag].insert(subscriber);
+
+        // add tag to this subscriber
+        if(subscribers_tags.find(subscriber) == subscribers_tags.end())
+            subscribers_tags.insert({{subscriber, std::vector<std::string>{tag}}});
+        else
+            subscribers_tags[subscriber].push_back(tag);
+
+        answer_client(subscriber, "subscribed");
+    } else
+        answer_client(subscriber, "already subscribed");
+
     std::cout << "subs to tag "<< tag << ": ";
     for(auto sub : tags_to_subscribers[tag]){
         std::cout << sub << " ";
@@ -61,12 +73,17 @@ void unsubscribe(int socket_descriptor, const std::string& tag){
     pthread_mutex_lock(&mutex);
 
     std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
-    // I client subscribes to tag, unsubscribe it it
+
+    // If client subscribes to tag, remove client from tag
     std::set<int>::iterator it;
     it = tags_to_subscribers[tag].find(socket_descriptor);
     if(it != tags_to_subscribers[tag].end()){
-        answer_client(socket_descriptor, "unsubscribed");
         tags_to_subscribers[tag].erase(it);
+
+        // remove tag from subscriber
+
+
+        answer_client(socket_descriptor, "unsubscribed");
     } else{
         answer_client(socket_descriptor, "not subscribed");
     }
@@ -117,6 +134,11 @@ int setup_server(char **argv) {
     std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
     return s;
 }
+void remove_tags_from_dropped_client(int socket_descriptor){
+    // TODO
+
+
+}
 
 std::string receive_message(const ClientData *client) {
     std::string message_from_client;
@@ -129,6 +151,7 @@ std::string receive_message(const ClientData *client) {
         std::cout << "Bytes recebidos: " << bytes_exchanged << std::endl;
         if(bytes_exchanged > 500){
             std::cout << "Msg maior que 500" << std::endl;
+            remove_tags_from_dropped_client(client->socket_descriptor);
             close(client->socket_descriptor);
         }
 
@@ -151,7 +174,7 @@ std::set<std::string> get_tags(const std::string& message){
     while(message_stream){
         message_stream >> token;
         if(token[0] == '#'){
-            tags.insert(token.substr(1)); //TODO tem que inserir sem a #
+            tags.insert(token.substr(1));
         }
     }
     std::cout << tags.size() << std::endl;
@@ -176,9 +199,11 @@ std::set<int> get_subscribers(const std::set<std::string>& tags){
 }
 
 void distribute_messages(const std::set<int>& subscribers, const std::string& message){
+
+    // convert string to char*
     const char *c_str_message;
     c_str_message = message.c_str();
-    char * c_message = nullptr;
+    char c_message[BUFSZ];
     strcpy(c_message, c_str_message);
 
     for(auto client : subscribers){
@@ -201,6 +226,7 @@ void * client_thread(void *data) {
         for (const char& i : message_from_client){
             if (!isascii(message_from_client[i])){
                 std::cout << "algo nao eh ascii" << std::endl;
+                remove_tags_from_dropped_client(client->socket_descriptor);
                 close(client->socket_descriptor);
                 pthread_exit(nullptr);
             }
@@ -231,8 +257,8 @@ void * client_thread(void *data) {
                 std::cout << "tags found in message" << tags.size() << std::endl;
                 if (!tags.empty()){
                     std::set<int> subscribers = get_subscribers(tags);
-//                    distribute_messages(subscribers, message_from_client);
-
+                    if(!subscribers.empty())
+                        distribute_messages(subscribers, message_from_client);
                 }
 
             }
