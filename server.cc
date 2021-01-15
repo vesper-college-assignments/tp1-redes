@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 #define BUFSZ 501
 
@@ -152,9 +153,12 @@ std::string receive_message(const ClientData *client) {
     char message_part[BUFSZ];
     size_t bytes_exchanged;
     char last_char;
-    std::cout << "Waiting for message..." << std::endl;
+
     do{
         bytes_exchanged = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
+        if(bytes_exchanged == 0)
+            throw std::runtime_error("No message received. Client may have disconnected");
+
         std::cout << "Bytes recebidos: " << bytes_exchanged << std::endl;
         if(bytes_exchanged > 500){
             std::cout << "Msg maior que 500" << std::endl;
@@ -225,7 +229,17 @@ void * client_thread(void *data) {
     while(true){
         // Receive message
         std::string message_from_client;
-        message_from_client = receive_message(client);
+        std::cout << "Waiting for message..." << std::endl;
+
+        try{
+            message_from_client = receive_message(client);
+        } catch( const std::runtime_error& e ){
+            std::cout << "No message received. Client may have disconnected" << std::endl;
+            erase_client_control_data(client->socket_descriptor);
+            close(client->socket_descriptor);
+            pthread_exit(nullptr);
+
+        }
 
         // Check input format
         for (const char& i : message_from_client){
