@@ -29,16 +29,18 @@ public:
     struct sockaddr_storage storage;
 };
 
-void answer_client(int socket_descriptor, const std::string message) {
+void answer_client(int socket_descriptor, const std::string raw_message) {
     std::cout << "Enviado mensagem ao cliente " << socket_descriptor << std::endl;
 
     // convert string to char*
+    std::string message = raw_message + "\n";
     const char *c_str_message;
     c_str_message = message.c_str();
     char c_message[BUFSZ];
     strcpy(c_message, c_str_message);
 
-    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message) + 1, 0);
+//    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message) + 1, 0);
+    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message), 0);
     if (bytes_exchanged != strlen(c_message) + 1) {
         logexit("send");
     }
@@ -143,6 +145,7 @@ int setup_server(char **argv) {
     std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
     return s;
 }
+
 void erase_client_control_data(int subscriber){
     pthread_mutex_lock(&mutex);
 
@@ -162,17 +165,18 @@ void erase_client_control_data(int subscriber){
 std::string receive_message(const ClientData *client) {
     std::string message_from_client;
     char message_part[BUFSZ];
-    size_t bytes_exchanged;
+    size_t bytes_part;
+    size_t bytes_total = 0;
     char last_char;
 
     do{
-        bytes_exchanged = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
-        if(bytes_exchanged == 0)
+        bytes_part = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
+        bytes_total = bytes_total + bytes_part;
+        if(bytes_part == 0)
             throw std::runtime_error("No message received. Client may have disconnected");
 
-        std::cout << "Bytes recebidos: " << bytes_exchanged << std::endl;
-        if(bytes_exchanged > 500){
-            std::cout << "Msg maior que 500" << std::endl;
+        if(bytes_part > 500){
+            std::cout << "Msg part greater than 500" << std::endl;
             erase_client_control_data(client->socket_descriptor);
             close(client->socket_descriptor);
         }
@@ -183,6 +187,13 @@ std::string receive_message(const ClientData *client) {
         memset(message_part, 0, BUFSZ);
     }while(last_char != '\n');
 
+    if(bytes_total > 500){
+        std::cout << "Complete msg greater than 500" << std::endl;
+        erase_client_control_data(client->socket_descriptor);
+        close(client->socket_descriptor);
+    }
+
+    std::cout << "Total bytes recebidos: " << bytes_total << std::endl;
     std::string message = message_from_client.substr(0,message_from_client.length()-1);
     std::cout << "Message complete: " << message << std::endl;
     return message;
@@ -204,7 +215,6 @@ std::set<std::string> get_tags(const std::string& message){
     pthread_mutex_unlock(&mutex);
     return tags;
 }
-
 
 std::set<int> get_subscribers(const std::set<std::string>& tags){
     pthread_mutex_lock(&mutex);
@@ -250,7 +260,6 @@ void * client_thread(void *data) {
             erase_client_control_data(client->socket_descriptor);
             close(client->socket_descriptor);
             pthread_exit(nullptr);
-
         }
 
         // Check input format

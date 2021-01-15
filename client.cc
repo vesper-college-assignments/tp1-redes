@@ -49,8 +49,14 @@ void *network_thread(void *data) {
         memset(message_received, 0, BUFSZ);
 
         size_t total_bytes = recv(sdata->socket_descriptor, message_received, BUFSZ, 0);
-        setvbuf(stdout, NULL, _IONBF, 0);
-        std::cout << message_received << std::endl;
+        std::string net_response = message_received;
+        net_response.pop_back();
+        net_response.pop_back();
+
+
+//        setvbuf(stdout, NULL, _IONBF, 0);
+
+        std::cout << net_response << std::endl;
 
         if (total_bytes == 0) {
             break;
