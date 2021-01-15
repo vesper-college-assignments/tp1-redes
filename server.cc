@@ -16,14 +16,11 @@
 #include <sstream>
 
 #define BUFSZ 501
-/*
-global hash tags_to_subscribers (string: set(client_socket));
-global set subscribers_sockets
-*/
+
 
 static pthread_mutex_t  mutex = PTHREAD_MUTEX_INITIALIZER;
 std::unordered_map<std::string, std::set<int>> tags_to_subscribers;
-std::unordered_map<int, std::vector<std::string>> subscribers_tags;
+std::unordered_map<int, std::set<std::string>> subscribers_tags;
 
 class ClientData {
 public:
@@ -51,9 +48,9 @@ void subscribe(int subscriber, const std::string& tag) {
 
         // add tag to this subscriber
         if(subscribers_tags.find(subscriber) == subscribers_tags.end())
-            subscribers_tags.insert({{subscriber, std::vector<std::string>{tag}}});
+            subscribers_tags.insert({{subscriber, std::set<std::string>{tag}}});
         else
-            subscribers_tags[subscriber].push_back(tag);
+            subscribers_tags[subscriber].insert(tag);
 
         answer_client(subscriber, "subscribed");
     } else
@@ -69,23 +66,23 @@ void subscribe(int subscriber, const std::string& tag) {
 
 }
 
-void unsubscribe(int socket_descriptor, const std::string& tag){
+void unsubscribe(int subscriber, const std::string& tag){
     pthread_mutex_lock(&mutex);
 
     std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
 
     // If client subscribes to tag, remove client from tag
     std::set<int>::iterator it;
-    it = tags_to_subscribers[tag].find(socket_descriptor);
+    it = tags_to_subscribers[tag].find(subscriber);
     if(it != tags_to_subscribers[tag].end()){
         tags_to_subscribers[tag].erase(it);
 
         // remove tag from subscriber
+        subscribers_tags[subscriber].erase(tag);
 
-
-        answer_client(socket_descriptor, "unsubscribed");
+        answer_client(subscriber, "unsubscribed");
     } else{
-        answer_client(socket_descriptor, "not subscribed");
+        answer_client(subscriber, "not subscribed");
     }
 
     std::cout << "subs to tag "<< tag << ": ";
@@ -134,9 +131,19 @@ int setup_server(char **argv) {
     std::cout << "\"bound to "<<  addrstr  << " waiting connections" << std::endl;
     return s;
 }
-void remove_tags_from_dropped_client(int socket_descriptor){
-    // TODO
+void erase_client_control_data(int subscriber){
+    pthread_mutex_lock(&mutex);
 
+    // remove sub from tags
+    for(auto& tag : subscribers_tags[subscriber]){
+        tags_to_subscribers[tag].erase(subscriber);
+    }
+
+    // remove sub
+    auto it = subscribers_tags.find(subscriber);
+    subscribers_tags.erase(it);
+
+    pthread_mutex_unlock(&mutex);
 
 }
 
@@ -145,13 +152,13 @@ std::string receive_message(const ClientData *client) {
     char message_part[BUFSZ];
     size_t bytes_exchanged;
     char last_char;
-    std::cout << "Receiving message" << std::endl;
+    std::cout << "Waiting for message..." << std::endl;
     do{
         bytes_exchanged = recv(client->socket_descriptor, message_part, BUFSZ - 1, 0);
         std::cout << "Bytes recebidos: " << bytes_exchanged << std::endl;
         if(bytes_exchanged > 500){
             std::cout << "Msg maior que 500" << std::endl;
-            remove_tags_from_dropped_client(client->socket_descriptor);
+            erase_client_control_data(client->socket_descriptor);
             close(client->socket_descriptor);
         }
 
@@ -187,13 +194,11 @@ std::set<int> get_subscribers(const std::set<std::string>& tags){
     pthread_mutex_lock(&mutex);
     std::set<int> subscribers;
     for(const auto& tag : tags){
-        std::cout << "searching tag " << tag << " with len "<< tag.length() <<std::endl;
         for(auto sub : tags_to_subscribers[tag]) {
-            std::cout << "Found this sub: " << sub << std::endl;
             subscribers.insert(sub);
         }
     }
-    std::cout << "subscribers to the tags: " << subscribers.size() << std::endl;
+    std::cout << "Current subscribers to this tags: " << subscribers.size() << std::endl;
     pthread_mutex_unlock(&mutex);
     return subscribers;
 }
@@ -226,7 +231,7 @@ void * client_thread(void *data) {
         for (const char& i : message_from_client){
             if (!isascii(message_from_client[i])){
                 std::cout << "algo nao eh ascii" << std::endl;
-                remove_tags_from_dropped_client(client->socket_descriptor);
+                erase_client_control_data(client->socket_descriptor);
                 close(client->socket_descriptor);
                 pthread_exit(nullptr);
             }
@@ -235,7 +240,6 @@ void * client_thread(void *data) {
 
         // Check for kill
         if(message_from_client == "##kill\n"){
-            std::cout << "Recebeu mensagem de kill" << std::endl;
             exit(EXIT_SUCCESS);
         }
 
@@ -254,7 +258,7 @@ void * client_thread(void *data) {
             }
             default: {
                 std::set<std::string> tags = get_tags(message_from_client);
-                std::cout << "tags found in message" << tags.size() << std::endl;
+                std::cout << "# of tags found in message: " << tags.size() << std::endl;
                 if (!tags.empty()){
                     std::set<int> subscribers = get_subscribers(tags);
                     if(!subscribers.empty())
