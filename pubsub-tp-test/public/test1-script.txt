@@ -1,6 +1,0 @@
-!connect 1 51511 output1.txt
-!sleep 1
-!s1 +dota
-!sleep 1
-!s1 ##kill
-!sleep 1

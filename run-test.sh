@@ -7,6 +7,8 @@ N=$1
 # tmux set-window-option remain-on-exit on
 tmux split-pane -v -c $(pwd) ./servidor 51511
 sleep 1s
+echo abri o server
+
 ./client.py --script test$N-script.txt
 
 K=1

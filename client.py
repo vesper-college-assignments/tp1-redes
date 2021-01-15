@@ -49,11 +49,12 @@ class Controller:
             self._handle(line)
         self.scriptfd.close()
 
-    def _handle(self, line):
-        if Controller.RE_CONNECT.match(line):
+    def _handle(self, line): #!connect 1 51511 output1.txt
+        if Controller.RE_CONNECT.match(line): # se a linha for de conexão
+
             # Use assignment expressions instead when Python 3.8 comes
             m = Controller.RE_CONNECT.match(line)
-            cid = int(m.group("cid"))
+            cid = int(m.group("cid")) # numero do cliente conectado
             assert self.sockets[cid] is None
             addr = "127.0.0.1"
             port = int(m.group("port"))

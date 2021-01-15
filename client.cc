@@ -18,9 +18,9 @@ public:
     int socket_descriptor;
 };
 
-void usage(char **port) {
-	std::cout << "usage: "<<  port[0]  << " <server IP> <server port>" << std::endl;
-    std::cout << "example: " << port[0] << " 127.0.0.1 51511" << std::endl;
+void usage(char **argv) {
+	std::cout << "usage: "<<  argv[0]  << " <server IP> <server port>" << std::endl;
+    std::cout << "example: " << argv[0] << " 127.0.0.1 51511" << std::endl;
 	exit(EXIT_FAILURE);
 }
 
@@ -50,12 +50,6 @@ void *network_thread(void *data) {
 
         size_t total_bytes = recv(sdata->socket_descriptor, message_received, BUFSZ, 0);
         std::string net_response = message_received;
-        net_response.pop_back();
-        net_response.pop_back();
-
-
-//        setvbuf(stdout, NULL, _IONBF, 0);
-
         std::cout << net_response << std::endl;
 
         if (total_bytes == 0) {
@@ -71,13 +65,13 @@ void *network_thread(void *data) {
 
 int main(int argc, char **argv) {
 
-	if (argc < 3) {
+	if (argc < 2) {
 		usage(argv);
 	}
 
 	// Aqui serão armazenadas as info do server socket
 	struct sockaddr_storage server_socket; /* Structure large enough to hold any socket address*/
-	if (0 != client_sockaddr_init(argv[1], argv[2], &server_socket)) {
+	if (0 != client_sockaddr_init("127.0.0.1", argv[1], &server_socket)) {
 		usage(argv);
 	}
 

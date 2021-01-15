@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include <pthread.h>
-#include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
 #include <cctype>
@@ -30,20 +29,13 @@ public:
 };
 
 void answer_client(int socket_descriptor, const std::string raw_message) {
-    std::cout << "Enviado mensagem ao cliente " << socket_descriptor << std::endl;
 
-    // convert string to char*
     std::string message = raw_message + "\n";
-    const char *c_str_message;
-    c_str_message = message.c_str();
-    char c_message[BUFSZ];
-    strcpy(c_message, c_str_message);
-
-//    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message) + 1, 0);
-    size_t bytes_exchanged = send(socket_descriptor, c_message, strlen(c_message), 0);
-    if (bytes_exchanged != strlen(c_message) + 1) {
+    size_t bytes_exchanged = send(socket_descriptor, message.data(), message.size(), 0);
+    if (bytes_exchanged != message.size()) {
         logexit("send");
     }
+    std::cout << "Enviado mensagem ao cliente " << socket_descriptor << std::endl;
 }
 
 void subscribe(int subscriber, const std::string& message_from_client) {
@@ -65,8 +57,8 @@ void subscribe(int subscriber, const std::string& message_from_client) {
         std::string response = "subscribed " + message_from_client;
         answer_client(subscriber, response);
     } else {
-
-        answer_client(subscriber, "already subscribed");
+        std::string response = "already subscribed " + message_from_client;
+        answer_client(subscriber, response);
     }
 
     std::cout << "subs to tag "<< tag << ": ";
@@ -96,7 +88,8 @@ void unsubscribe(int subscriber, const std::string& message_from_client){
         std::string response = "unsubscribed " + message_from_client;
         answer_client(subscriber, response);
     } else{
-        answer_client(subscriber, "not subscribed");
+        std::string response = "not subscribed " + message_from_client;
+        answer_client(subscriber, response);
     }
 
     std::cout << "subs to tag "<< tag << ": ";
@@ -107,15 +100,15 @@ void unsubscribe(int subscriber, const std::string& message_from_client){
     pthread_mutex_unlock(&mutex);
 }
 
-void usage(char **port) {
-    std::cout << "usage: "<<  port[0]  << " <v4|v6> <server port>" << std::endl;
-    std::cout << "example: " << port[0] << " v4 51511" << std::endl;
+void usage(char **argv) {
+    std::cout << "usage: "<<  argv[0]  << " <server port>" << std::endl;
+    std::cout << "example: " << argv[0] << " 51511" << std::endl;
     exit(EXIT_FAILURE);
 }
 
 int setup_server(char **argv) {
     struct sockaddr_storage server_data;
-    if (0 != server_sockaddr_init(argv[1], argv[2], &server_data)) {
+    if (0 != server_sockaddr_init("v4", argv[1], &server_data)) {
         usage(argv);
     }
 
@@ -182,7 +175,6 @@ std::string receive_message(const ClientData *client) {
         }
 
         last_char = message_part[strlen(message_part) - 1];
-        std::cout << (int)last_char << std::endl;
         message_from_client.append(message_part);
         memset(message_part, 0, BUFSZ);
     }while(last_char != '\n');
@@ -208,10 +200,17 @@ std::set<std::string> get_tags(const std::string& message){
     while(message_stream){
         message_stream >> token;
         if(token[0] == '#'){
-            tags.insert(token.substr(1));
+
+            // count #
+            int n_hash = 0;
+            for(char c : token){
+                if(c == '#')
+                    n_hash++;
+            }
+            if (n_hash == 1)
+                tags.insert(token.substr(1));
         }
     }
-    std::cout << tags.size() << std::endl;
     pthread_mutex_unlock(&mutex);
     return tags;
 }
@@ -261,6 +260,9 @@ void * client_thread(void *data) {
             close(client->socket_descriptor);
             pthread_exit(nullptr);
         }
+        if(message_from_client == "##kill"){
+            exit(EXIT_SUCCESS);
+        }
 
         // Check input format
         for (const char& i : message_from_client){
@@ -273,10 +275,6 @@ void * client_thread(void *data) {
         }
         std::cout << "Mensagem recebida: "<< message_from_client << std::endl;
 
-        // Check for kill
-        if(message_from_client == "##kill"){
-            exit(EXIT_SUCCESS);
-        }
 
         // Decide action
         char first_char = message_from_client[0];
@@ -304,7 +302,7 @@ void * client_thread(void *data) {
 
 
 int main(int argc, char **argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         usage(argv);
     }
 
