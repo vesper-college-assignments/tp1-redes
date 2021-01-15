@@ -15,10 +15,6 @@
 #include <set>
 #include <sstream>
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "EndlessLoop"
-
-
 #define BUFSZ 501
 /*
 global hash tags_to_subscribers (string: set(client_socket));
@@ -27,8 +23,6 @@ global set subscribers_sockets
 
 static pthread_mutex_t  mutex = PTHREAD_MUTEX_INITIALIZER;
 std::unordered_map<std::string, std::set<int>> tags_to_subscribers;
-std::set<int> send_message_to;
-
 
 class ClientData {
 public:
@@ -37,26 +31,28 @@ public:
 };
 
 void answer_client(int socket_descriptor, const char *answer) {
-    char response[BUFSZ];
-    memset(response, 0, BUFSZ);
-    sprintf(response, "%s", answer);
-
-    size_t bytes_exchanged = send(socket_descriptor, response, strlen(response) + 1, 0);
-    if (bytes_exchanged != strlen(response) + 1) {
+    size_t bytes_exchanged = send(socket_descriptor, answer, strlen(answer) + 1, 0);
+    if (bytes_exchanged != strlen(answer) + 1) {
         logexit("send");
     }
 }
 
 void subscribe(int socket_descriptor, const std::string& tag) {
     pthread_mutex_lock(&mutex);
-
+    std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
     // If client not subscribed to tag
     if (tags_to_subscribers[tag].find(socket_descriptor) == tags_to_subscribers[tag].end()) {
         answer_client(socket_descriptor, "subscribed");
         tags_to_subscribers[tag].insert(socket_descriptor);
     } else {
-        answer_client(socket_descriptor, ">already subscribed");
+        answer_client(socket_descriptor, "already subscribed");
     }
+    std::cout << "subs to tag "<< tag << ": ";
+    for(auto sub : tags_to_subscribers[tag]){
+        std::cout << sub << " ";
+    }
+    std::cout << std::endl;
+
     pthread_mutex_unlock(&mutex);
 
 }
@@ -64,6 +60,7 @@ void subscribe(int socket_descriptor, const std::string& tag) {
 void unsubscribe(int socket_descriptor, const std::string& tag){
     pthread_mutex_lock(&mutex);
 
+    std::cout <<"essa tag tem tamanho: "<< tag.length()<< std::endl;
     // I client subscribes to tag, unsubscribe it it
     std::set<int>::iterator it;
     it = tags_to_subscribers[tag].find(socket_descriptor);
@@ -74,6 +71,11 @@ void unsubscribe(int socket_descriptor, const std::string& tag){
         answer_client(socket_descriptor, "not subscribed");
     }
 
+    std::cout << "subs to tag "<< tag << ": ";
+    for(auto sub : tags_to_subscribers[tag]){
+        std::cout << sub << " ";
+    }
+    std::cout << std::endl;
     pthread_mutex_unlock(&mutex);
 }
 
@@ -140,33 +142,50 @@ std::string receive_message(const ClientData *client) {
     return message_from_client;
 }
 
-std::set<std::string> get_tags(std::string message){
+std::set<std::string> get_tags(const std::string& message){
+    pthread_mutex_lock(&mutex);
+
     std::istringstream message_stream(message);
     std::string token;
     std::set<std::string> tags;
     while(message_stream){
         message_stream >> token;
         if(token[0] == '#'){
-            tags.insert(token); //TODO tem que inserir sem a #
+            tags.insert(token.substr(1)); //TODO tem que inserir sem a #
         }
     }
     std::cout << tags.size() << std::endl;
+    pthread_mutex_unlock(&mutex);
+    return tags;
 }
 
 
-std::set<int> get_subscribers(std::set<std::string> tags){
+std::set<int> get_subscribers(const std::set<std::string>& tags){
+    pthread_mutex_lock(&mutex);
     std::set<int> subscribers;
-    for(auto tag : tags){
+    for(const auto& tag : tags){
+        std::cout << "searching tag " << tag << " with len "<< tag.length() <<std::endl;
         for(auto sub : tags_to_subscribers[tag]) {
+            std::cout << "Found this sub: " << sub << std::endl;
             subscribers.insert(sub);
         }
     }
+    std::cout << "subscribers to the tags: " << subscribers.size() << std::endl;
+    pthread_mutex_unlock(&mutex);
     return subscribers;
 }
 
-void distribute_messages(std::set<int> subscribers){
+void distribute_messages(const std::set<int>& subscribers, const std::string& message){
+    const char *c_str_message;
+    c_str_message = message.c_str();
+    char * c_message = nullptr;
+    strcpy(c_message, c_str_message);
 
+    for(auto client : subscribers){
+        answer_client(client, c_message);
+    }
 }
+
 void * client_thread(void *data) {
     auto *client = (ClientData *)data;
     auto *caddr = (struct sockaddr *)(&client->storage);
@@ -198,30 +217,30 @@ void * client_thread(void *data) {
         char first_char = message_from_client[0];
         switch (first_char) {
             case '+': {
-                std::string tag = message_from_client.substr(1);
+                std::string tag = message_from_client.substr(1, message_from_client.length()-2);
                 subscribe(client->socket_descriptor, tag);
                 break;
             }
             case '-': {
-                std::string tag = message_from_client.substr(1);
+                std::string tag = message_from_client.substr(1,message_from_client.length()-2);
                 unsubscribe(client->socket_descriptor, tag);
                 break;
             }
             default: {
                 std::set<std::string> tags = get_tags(message_from_client);
+                std::cout << "tags found in message" << tags.size() << std::endl;
                 if (!tags.empty()){
                     std::set<int> subscribers = get_subscribers(tags);
-                    distribute_messages(subscribers);
+//                    distribute_messages(subscribers, message_from_client);
+
                 }
+
             }
         }// switch
     } // while
 }// client_thread
 
 
-
-
-#pragma clang diagnostic push
 int main(int argc, char **argv) {
     if (argc < 3) {
         usage(argv);
@@ -250,8 +269,3 @@ int main(int argc, char **argv) {
        
     exit(EXIT_SUCCESS);
 }
-
-
-
-#pragma clang diagnostic pop
-#pragma clang diagnostic pop
